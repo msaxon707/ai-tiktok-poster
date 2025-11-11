@@ -1,21 +1,13 @@
-# Use lightweight Python image
 FROM python:3.11-slim
 
-# Set working directory
 WORKDIR /app
-
-# Copy project files into container
 COPY . /app
 
-# Install dependencies and ffmpeg
+# Install system packages (needed for moviepy/ffmpeg)
 RUN apt-get update && apt-get install -y ffmpeg && rm -rf /var/lib/apt/lists/*
 
-# Upgrade pip and install Python packages
+# Upgrade pip and install dependencies
 RUN pip install --upgrade pip
-RUN pip install --no-cache-dir openai moviepy pillow python-dotenv requests selenium
+RUN pip install --no-cache-dir moviepy==1.0.3 pillow openai requests python-dotenv
 
-# Expose optional port (Coolify friendly)
-EXPOSE 3000
-
-# Run main script
 CMD ["python", "main.py"]
