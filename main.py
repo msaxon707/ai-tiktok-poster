@@ -1,177 +1,151 @@
-import os, time, random, textwrap
-import openai
-from moviepy.editor import (
-    VideoFileClip, AudioFileClip, TextClip,
-    CompositeVideoClip, CompositeAudioClip
-)
+import os, time, random, csv, textwrap
+from datetime import datetime
+from moviepy.editor import VideoFileClip, AudioFileClip, TextClip, CompositeVideoClip, CompositeAudioClip
+from openai import OpenAI
 
-# -------------------------------
-# ENVIRONMENT CONFIG
-# -------------------------------
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-POST_INTERVAL = int(os.getenv("POST_INTERVAL", 180))  # minutes
-NICHE = os.getenv("NICHE", "motivation")
-MIN_VIDEO_LENGTH = int(os.getenv("MIN_VIDEO_LENGTH", 10))
-MAX_VIDEO_LENGTH = int(os.getenv("MAX_VIDEO_LENGTH", 30))
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
+# --- ENV CONFIG ---
+POST_INTERVAL = int(os.getenv("POST_INTERVAL", 180))
+MAX_RUNS = int(os.getenv("MAX_RUNS", 8))
+MIN_VIDEO_LENGTH = int(os.getenv("MIN_VIDEO_LENGTH", 20))
+MAX_VIDEO_LENGTH = int(os.getenv("MAX_VIDEO_LENGTH", 45))
 CAPTION_COLOR = os.getenv("CAPTION_COLOR", "white")
 CAPTION_FONT_SIZE = int(os.getenv("CAPTION_FONT_SIZE", 40))
 VOICE_STYLE = os.getenv("VOICE_STYLE", "alloy")
-MAX_RUNS = int(os.getenv("MAX_RUNS", 24))
+NICHE = os.getenv("NICHE", "motivation")
 DEBUG_MODE = os.getenv("DEBUG_MODE", "false").lower() == "true"
 
-openai.api_key = OPENAI_API_KEY
+last_bg, last_music = None, None
 
 
-# -------------------------------
-# HELPER FUNCTIONS
-# -------------------------------
-def safe_openai_call(func, *args, retries=3, delay=3, **kwargs):
-    """Retries OpenAI calls to prevent runaway charges"""
-    for attempt in range(retries):
-        try:
-            return func(*args, **kwargs)
-        except Exception as e:
-            print(f"⚠️ OpenAI error (attempt {attempt+1}/{retries}): {e}")
-            time.sleep(delay)
-    print("❌ Giving up after multiple errors.")
-    return None
+def log_event(status, caption, bg="", music="", error=""):
+    log_exists = os.path.exists("log.csv")
+    with open("log.csv", "a", newline="", encoding="utf-8") as f:
+        w = csv.writer(f)
+        if not log_exists:
+            w.writerow(["timestamp", "status", "caption", "background", "music", "error"])
+        w.writerow([datetime.now(), status, caption, bg, music, error])
 
 
-def generate_script(niche, duration):
-    """Generate short motivational or true-crime script"""
-    prompt = (
-        f"Write a short {duration}-second TikTok script in the {niche} niche. "
-        f"It should sound natural when spoken aloud and end with a strong or emotional line. "
-        f"Keep it clean and under {duration * 10} characters."
-    )
-    resp = safe_openai_call(
-        openai.ChatCompletion.create,
-        model="gpt-4o-mini",
-        messages=[{"role": "user", "content": prompt}],
-        timeout=20
-    )
-    if not resp:
+def choose_asset(path, last_used):
+    files = [f for f in os.listdir(path) if os.path.isfile(os.path.join(path, f))]
+    if not files:
+        raise FileNotFoundError(f"No files found in {path}")
+    choice = random.choice(files)
+    while choice == last_used and len(files) > 1:
+        choice = random.choice(files)
+    return os.path.join(path, choice), choice
+
+
+def ai_text(prompt):
+    try:
+        r = client.chat.completions.create(model="gpt-4o-mini", messages=[{"role": "user", "content": prompt}])
+        return r.choices[0].message.content.strip()
+    except Exception as e:
+        print("AI Error:", e)
         return None
-    return resp.choices[0].message["content"].strip()
 
 
-def generate_hashtags(niche):
-    """Auto-generate trending hashtags for your content"""
-    prompt = f"List 5 trending TikTok hashtags for {niche} videos. Only output hashtags."
-    resp = safe_openai_call(
-        openai.ChatCompletion.create,
-        model="gpt-4o-mini",
-        messages=[{"role": "user", "content": prompt}],
-        timeout=10
-    )
-    if not resp:
-        return "#motivation #fyp"
-    return resp.choices[0].message["content"].replace("\n", " ")
+def generate_script():
+    duration = random.randint(MIN_VIDEO_LENGTH, MAX_VIDEO_LENGTH)
+    prompt = f"Write a {duration}-second motivational TikTok script that sounds inspiring and powerful."
+    return ai_text(prompt), duration
+
+
+def generate_hashtags():
+    prompt = f"Give 5 trending TikTok hashtags for {NICHE} content. Output them in one line separated by spaces."
+    tags = ai_text(prompt)
+    return tags if tags else "#motivation #inspiration #fyp"
 
 
 def generate_voice(script):
-    """Generate voice using GPT-4o-mini TTS"""
-    if not script:
-        print("⚠️ No script provided.")
-        return None
-    path = "voice.mp3"
-    result = safe_openai_call(
-        openai.audio.speech.create,
-        model="gpt-4o-mini-tts",
-        voice=VOICE_STYLE,
-        input=script,
-        timeout=30
-    )
-    if result:
-        with open(path, "wb") as f:
-            f.write(result)
+    try:
+        path = "voice.mp3"
+        with client.audio.speech.with_streaming_response.create(
+            model="gpt-4o-mini-tts", voice=VOICE_STYLE, input=script
+        ) as response:
+            response.stream_to_file(path)
         return path
-    return None
+    except Exception as e:
+        print("Voice gen error:", e)
+        return None
 
 
 def make_video(script, audio_path, duration):
-    """Combine video, captions, and background music"""
+    global last_bg, last_music
     try:
-        video_path = "assets/backgrounds/stock.mp4"
-        music_path = "assets/music/calm_loop.mp3"
+        bg_video, bg_name = choose_asset("assets/backgrounds", last_bg)
+        music_file, music_name = choose_asset("assets/music", last_music)
+        last_bg, last_music = bg_name, music_name
 
-        clip = VideoFileClip(video_path).subclip(0, min(duration, clip.duration))
-        voice_audio = AudioFileClip(audio_path)
-        music = AudioFileClip(music_path).volumex(0.15).set_duration(duration)
+        clip = VideoFileClip(bg_video).subclip(0, min(duration, VideoFileClip(bg_video).duration))
+        voice = AudioFileClip(audio_path)
+        music = AudioFileClip(music_file).volumex(0.15).set_duration(duration)
+        final_audio = CompositeAudioClip([voice, music])
+        clip = clip.set_audio(final_audio)
 
-        combined_audio = CompositeAudioClip([voice_audio, music])
-        clip = clip.set_audio(combined_audio)
-
-        # captions
-        wrapped = textwrap.wrap(script, width=40)
+        lines = textwrap.wrap(script, width=40)
         caption_clips = []
-        per_line = duration / max(len(wrapped), 1)
-        start_time = 0
-
-        for line in wrapped:
+        per_line = duration / max(len(lines), 1)
+        t = 0
+        for line in lines:
             txt = TextClip(
                 line,
                 fontsize=CAPTION_FONT_SIZE,
                 color=CAPTION_COLOR,
                 font="assets/fonts/Roboto-Regular.ttf",
-            ).set_position(("center", "bottom")).set_duration(per_line).set_start(start_time)
+                method="caption",
+            ).set_position(("center", "bottom")).set_duration(per_line).set_start(t)
             caption_clips.append(txt)
-            start_time += per_line
+            t += per_line
 
         final = CompositeVideoClip([clip, *caption_clips])
         final.write_videofile("final.mp4", codec="libx264", audio_codec="aac", verbose=False, logger=None)
-        return "final.mp4"
+        return "final.mp4", bg_name, music_name
     except Exception as e:
-        print(f"❌ Error making video: {e}")
-        return None
+        print("Video error:", e)
+        raise
 
 
 def upload_video(video_path, caption):
-    """Placeholder for TikTok upload logic"""
-    print(f"Uploading {video_path} with caption: {caption[:150]}...")
+    # Placeholder: TikTok upload logic here if you add session ID integration later
+    print(f"Uploading {video_path} with caption:\n{caption}\n")
     return True
 
 
-# -------------------------------
-# MAIN BOT LOOP
-# -------------------------------
 def main():
-    print("🚀 AI TikTok Poster started using GPT-4o-mini")
+    print("🚀 AI Motivational Video Poster started.")
     for run in range(MAX_RUNS):
+        print(f"\n▶️ Run {run+1}/{MAX_RUNS}")
         try:
-            print(f"\n🎬 Run {run+1}/{MAX_RUNS}")
-            duration = random.randint(MIN_VIDEO_LENGTH, MAX_VIDEO_LENGTH)
-            print(f"⏱️ Target duration: {duration}s")
-
-            script = generate_script(NICHE, duration)
+            script, duration = generate_script()
             if not script:
+                log_event("fail", "no script")
                 continue
-
-            hashtags = generate_hashtags(NICHE)
+            hashtags = generate_hashtags()
             caption = f"{script[:150]}... {hashtags}"
-
             voice = generate_voice(script)
             if not voice:
+                log_event("fail", caption, error="voice failed")
                 continue
-
-            video = make_video(script, voice, duration)
+            video, bg, music = make_video(script, voice, duration)
             if not video:
+                log_event("fail", caption, bg, music, "video failed")
                 continue
-
             if not DEBUG_MODE:
                 upload_video(video, caption)
+                log_event("success", caption, bg, music)
                 print("✅ Posted successfully!")
             else:
-                print("🧪 Debug mode active — video saved but not posted.")
-
+                log_event("debug", caption, bg, music, "not posted (debug)")
+                print("🧪 Debug mode, video saved only.")
         except Exception as e:
-            print(f"❌ Fatal error: {e}")
-            time.sleep(5)
-
-        print(f"⏳ Waiting {POST_INTERVAL} minutes until next post...")
+            log_event("error", "", "", "", str(e))
+            print("❌ Error:", e)
+        print(f"⏳ Sleeping {POST_INTERVAL} minutes...")
         time.sleep(POST_INTERVAL * 60)
-
-    print("\n✅ Finished daily limit. Stopping safely.")
+    print("✅ Finished daily cycle.")
 
 
 if __name__ == "__main__":
