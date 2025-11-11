@@ -2,122 +2,73 @@ import os
 import time
 import random
 import logging
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.common.by import By
+from upload import upload_video, generate_hashtags
 
 # -------------------- SETTINGS --------------------
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+logging.basicConfig(
+    filename="poster.log",  # also saves logs in file
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s"
+)
 
-TIKTOK_SESSION_ID = os.getenv("TIKTOK_SESSION_ID")
-UPLOAD_WAIT = 15           # Wait after clicking Post
-MAX_RETRIES = 3            # How many times to retry
-RETRY_DELAY = 600          # 10 minutes between retries
-DEFAULT_NICHE = os.getenv("NICHE", "motivation")
+OUTPUT_PATH = os.getenv("OUTPUT_PATH", "/app/videos")
+POST_INTERVAL = int(os.getenv("POST_INTERVAL", 180))  # seconds between posts
+NICHE = os.getenv("NICHE", "motivation")
 
-# -------------------- DRIVER SETUP --------------------
-def get_driver():
-    chrome_options = Options()
-    chrome_options.add_argument("--headless=new")
-    chrome_options.add_argument("--no-sandbox")
-    chrome_options.add_argument("--disable-dev-shm-usage")
-    chrome_options.add_argument("--window-size=1920,1080")
-    driver = webdriver.Chrome(options=chrome_options)
-    return driver
+# Sample motivational quotes (local to avoid API costs)
+QUOTES = [
+    "You are stronger than you think.",
+    "Push yourself, because no one else will do it for you.",
+    "Discipline beats motivation every time.",
+    "Every day is a new opportunity to grow.",
+    "Don’t stop until you’re proud.",
+    "Dream big, work hard, stay humble.",
+    "Small steps every day lead to big changes.",
+    "Focus on progress, not perfection."
+]
 
-# -------------------- LOGIN --------------------
-def tiktok_login(driver):
-    logging.info("Logging into TikTok using session cookie...")
-    driver.get("https://www.tiktok.com/upload?lang=en")
+# -------------------- MAIN AUTO POST LOOP --------------------
+def get_random_video():
+    """
+    Grabs a random video file from OUTPUT_PATH
+    """
+    if not os.path.exists(OUTPUT_PATH):
+        os.makedirs(OUTPUT_PATH)
+    videos = [f for f in os.listdir(OUTPUT_PATH) if f.endswith(('.mp4', '.mov', '.mkv'))]
+    if not videos:
+        logging.warning("⚠️ No videos found in folder. Add files to /videos.")
+        return None
+    return os.path.join(OUTPUT_PATH, random.choice(videos))
 
-    driver.add_cookie({
-        "name": "sessionid",
-        "value": TIKTOK_SESSION_ID,
-        "domain": ".tiktok.com",
-        "path": "/"
-    })
-    driver.refresh()
-    time.sleep(3)
+def generate_caption():
+    """
+    Builds a motivational caption with hashtags.
+    """
+    quote = random.choice(QUOTES)
+    hashtags = generate_hashtags(NICHE)
+    return f"{quote}\n\n{hashtags}"
 
-    if "upload" in driver.current_url:
-        logging.info("✅ Logged into TikTok successfully.")
-        return True
-    else:
-        logging.warning("⚠️ TikTok login failed — check session ID or expiration.")
-        return False
+def main():
+    logging.info("🚀 Starting AI TikTok Auto Poster...")
+    while True:
+        video = get_random_video()
+        if not video:
+            logging.warning("No videos found. Retrying in 10 minutes.")
+            time.sleep(600)
+            continue
 
-# -------------------- HASHTAG GENERATOR --------------------
-def generate_hashtags(niche="motivation"):
-    hashtag_dict = {
-        "motivation": [
-            "#motivation", "#success", "#inspiration", "#mindset",
-            "#nevergiveup", "#goals", "#fyp", "#motivationalquotes",
-            "#positivity", "#selfimprovement"
-        ],
-        "fitness": [
-            "#fitness", "#gym", "#workout", "#fitlife", "#transformation",
-            "#fyp", "#health", "#dedication", "#fitmotivation"
-        ],
-        "lifestyle": [
-            "#lifestyle", "#dailyvibes", "#countryliving", "#happiness",
-            "#selflove", "#relax", "#goodvibes", "#momlife", "#fyp"
-        ],
-        "dogs": [
-            "#dogsoftiktok", "#puppylove", "#fyp", "#doglife", "#cutedog",
-            "#dogs", "#doglover", "#petsoftiktok"
-        ]
-    }
+        caption = generate_caption()
+        logging.info(f"🎬 Uploading video: {video}")
+        logging.info(f"📝 Caption: {caption}")
 
-    hashtags = hashtag_dict.get(niche.lower(), hashtag_dict["motivation"])
-    random.shuffle(hashtags)
-    return " ".join(hashtags[:6])
-
-# -------------------- ATTEMPT UPLOAD --------------------
-def attempt_upload(video_path, caption):
-    driver = get_driver()
-    try:
-        if not tiktok_login(driver):
-            return False
-
-        driver.get("https://www.tiktok.com/upload?lang=en")
-        time.sleep(5)
-
-        upload_input = driver.find_element(By.XPATH, '//input[@type="file"]')
-        upload_input.send_keys(video_path)
-        logging.info("🎥 Video file loaded.")
-
-        time.sleep(5)
-        caption_box = driver.find_element(By.XPATH, '//div[@role="textbox"]')
-        caption_box.send_keys(caption)
-        logging.info("📝 Caption added.")
-
-        post_button = driver.find_element(By.XPATH, '//button[contains(text(), "Post")]')
-        post_button.click()
-        logging.info("🚀 Video upload started... waiting to confirm.")
-        time.sleep(UPLOAD_WAIT)
-
-        logging.info("✅ Upload finished successfully!")
-        return True
-
-    except Exception as e:
-        logging.error(f"❌ Upload attempt failed: {e}")
-        return False
-
-    finally:
-        driver.quit()
-
-# -------------------- RETRY HANDLER --------------------
-def upload_video(video_path, quote):
-    caption = f"{quote}\n\n{generate_hashtags(DEFAULT_NICHE)}"
-
-    for attempt in range(1, MAX_RETRIES + 1):
-        logging.info(f"🌀 Upload attempt {attempt}/{MAX_RETRIES}")
-        if attempt_upload(video_path, caption):
-            logging.info("✅ TikTok upload confirmed successful.")
-            return True
+        success = upload_video(video, caption)
+        if success:
+            logging.info(f"✅ Successfully posted video: {video}")
         else:
-            logging.warning(f"⚠️ Upload failed. Retrying in {RETRY_DELAY // 60} minutes...")
-            time.sleep(RETRY_DELAY)
+            logging.error(f"❌ Failed to post video: {video}")
 
-    logging.error("❌ All upload attempts failed. Skipping this video.")
-    return False
+        logging.info(f"🕒 Waiting {POST_INTERVAL} seconds before next upload...")
+        time.sleep(POST_INTERVAL)
+
+if __name__ == "__main__":
+    main()
