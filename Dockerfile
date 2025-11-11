@@ -7,6 +7,7 @@ WORKDIR /app
 COPY . /app
 
 # Install dependencies
+# rebuild trigger
 RUN pip install --no-cache-dir -r requirements.txt
 
 CMD ["python", "main.py"]
