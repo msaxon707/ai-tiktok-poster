@@ -1,127 +1,119 @@
-import os, time, random, csv, textwrap, requests
-from datetime import datetime
-from moviepy.editor import VideoFileClip, AudioFileClip, TextClip, CompositeVideoClip, CompositeAudioClip
+import os, time, random, json, requests
 from openai import OpenAI
+from moviepy.editor import VideoFileClip, AudioFileClip, TextClip, CompositeVideoClip
+from dotenv import load_dotenv
+
+load_dotenv()
+
+MODEL = os.getenv("MODEL", "gpt-4o-mini")
+POST_INTERVAL = int(os.getenv("POST_INTERVAL", 3600))
+VIDEOS_DIR = "assets/videos"
+MUSIC_DIR = "assets/music"
+OUTPUT_DIR = "output"
+TIKTOK_SESSION_ID = os.getenv("TIKTOK_SESSION_ID")
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-TIKTOK_SESSION = os.getenv("TIKTOK_SESSION_ID")
 
-POST_INTERVAL = int(os.getenv("POST_INTERVAL", 180))
-MAX_RUNS = int(os.getenv("MAX_RUNS", 8))
-DEBUG_MODE = os.getenv("DEBUG_MODE", "false").lower() == "true"
-CAPTION_FONT_SIZE = int(os.getenv("CAPTION_FONT_SIZE", 40))
-CAPTION_COLOR = os.getenv("CAPTION_COLOR", "white")
-
-def log_event(status, caption, bg="", music="", error=""):
-    log_exists = os.path.exists("log.csv")
-    with open("log.csv", "a", newline="", encoding="utf-8") as f:
-        w = csv.writer(f)
-        if not log_exists:
-            w.writerow(["timestamp", "status", "caption", "background", "music", "error"])
-        w.writerow([datetime.now(), status, caption, bg, music, error])
-
-def choose_asset(path):
-    files = [f for f in os.listdir(path) if os.path.isfile(os.path.join(path, f))]
-    return os.path.join(path, random.choice(files))
-
-def ai_text(prompt):
+# ---------------------------
+# Generate Quote Safely
+# ---------------------------
+def safe_generate_quote():
     try:
-        r = client.chat.completions.create(model="gpt-4o-mini", messages=[{"role": "user", "content": prompt}])
-        return r.choices[0].message.content.strip()
+        resp = client.chat.completions.create(
+            model=MODEL,
+            messages=[
+                {"role": "system", "content": "You create short, positive motivational quotes."},
+                {"role": "user", "content": "Write a single uplifting motivational quote for TikTok."}
+            ],
+            max_tokens=40
+        )
+        return resp.choices[0].message.content.strip()
     except Exception as e:
-        print("AI Error:", e)
+        print(f"⚠️ AI Error: {e}")
         return None
 
-def generate_script():
-    duration = random.randint(25, 45)
-    prompt = f"Write a motivational TikTok script for a {duration}-second video. Make it inspiring and emotional."
-    return ai_text(prompt), duration
-
-def generate_hashtags():
-    prompt = "Give me 5 trending hashtags for motivational TikToks (short list separated by spaces)."
-    tags = ai_text(prompt)
-    return tags if tags else "#motivation #inspiration #fyp"
-
-def generate_voice(script):
+# ---------------------------
+# Create Video
+# ---------------------------
+def create_video(quote):
     try:
-        out_path = "voice.mp3"
-        with client.audio.speech.with_streaming_response.create(
-            model="gpt-4o-mini-tts", voice="alloy", input=script
-        ) as response:
-            response.stream_to_file(out_path)
-        return out_path
+        videos = [f for f in os.listdir(VIDEOS_DIR) if f.endswith(".mp4")]
+        musics = [f for f in os.listdir(MUSIC_DIR) if f.endswith(".mp3")]
+        if not videos or not musics:
+            print("⚠️ No media found.")
+            return None
+
+        video_path = os.path.join(VIDEOS_DIR, random.choice(videos))
+        music_path = os.path.join(MUSIC_DIR, random.choice(musics))
+        output_path = os.path.join(OUTPUT_DIR, f"motiv_{int(time.time())}.mp4")
+
+        clip = VideoFileClip(video_path)
+        if clip.duration < 5 or clip.duration > 60:
+            print("⚠️ Video not within TikTok time limits.")
+            return None
+
+        audio = AudioFileClip(music_path)
+        text = TextClip(quote, fontsize=40, color="white", font="Roboto", method='caption',
+                        size=clip.size, align='center', interline=5).set_duration(clip.duration)
+        final = CompositeVideoClip([clip, text.set_position("center").set_opacity(0.9)]).set_audio(audio)
+
+        os.makedirs(OUTPUT_DIR, exist_ok=True)
+        final.write_videofile(output_path, fps=24, codec="libx264", audio_codec="aac")
+        return output_path
     except Exception as e:
-        print("Voice Error:", e)
+        print(f"❌ Video creation failed: {e}")
         return None
 
-def make_video(script, audio_path, duration):
-    try:
-        bg_video = choose_asset("assets/backgrounds")
-        music = choose_asset("assets/music")
-        clip = VideoFileClip(bg_video).subclip(0, min(duration, VideoFileClip(bg_video).duration))
-        voice = AudioFileClip(audio_path)
-        music_audio = AudioFileClip(music).volumex(0.15).set_duration(duration)
-        clip = clip.set_audio(CompositeAudioClip([voice, music_audio]))
-
-        lines = textwrap.wrap(script, width=40)
-        per_line = duration / max(len(lines), 1)
-        captions = []
-        t = 0
-        for line in lines:
-            txt = TextClip(
-                line, fontsize=CAPTION_FONT_SIZE, color=CAPTION_COLOR,
-                font="assets/fonts/Roboto-Regular.ttf", method="caption"
-            ).set_position(("center", "bottom")).set_duration(per_line).set_start(t)
-            captions.append(txt)
-            t += per_line
-
-        final = CompositeVideoClip([clip, *captions])
-        final.write_videofile("final.mp4", codec="libx264", audio_codec="aac", verbose=False, logger=None)
-        return "final.mp4", os.path.basename(bg_video), os.path.basename(music)
-    except Exception as e:
-        print("Video Error:", e)
-        raise
-
-def upload_tiktok(video_path, caption):
-    if not TIKTOK_SESSION:
-        print("⚠️ Missing TikTok session ID.")
-        return False
-    try:
-        url = "https://www.tiktok.com/upload?lang=en"
-        cookies = {"sessionid": TIKTOK_SESSION}
-        files = {"video": open(video_path, "rb")}
-        data = {"caption": caption}
-        r = requests.post(url, files=files, data=data, cookies=cookies)
-        print("TikTok upload status:", r.status_code)
-        return r.status_code == 200
-    except Exception as e:
-        print("Upload error:", e)
+# ---------------------------
+# Upload to TikTok
+# ---------------------------
+def upload_to_tiktok(video_path, caption):
+    if not TIKTOK_SESSION_ID:
+        print("⚠️ Missing TikTok Session ID. Skipping upload.")
         return False
 
-def main():
-    print("🚀 AI Motivational Video Poster started.")
-    for run in range(MAX_RUNS):
-        try:
-            print(f"\n▶️ Run {run+1}/{MAX_RUNS}")
-            script, duration = generate_script()
-            if not script: continue
-            hashtags = generate_hashtags()
-            caption = f"{script[:150]}... {hashtags}"
-            voice = generate_voice(script)
-            if not voice: continue
-            video, bg, music = make_video(script, voice, duration)
+    cookies = {"sessionid": TIKTOK_SESSION_ID}
+    upload_url = "https://open-api.tiktok.com/share/video/upload/"
+    data = {
+        "caption": caption[:2200]  # TikTok caption limit
+    }
 
-            if DEBUG_MODE:
-                print("🧪 Debug mode: video created but not uploaded.")
+    try:
+        with open(video_path, "rb") as f:
+            files = {"video": f}
+            r = requests.post(upload_url, files=files, data=data, cookies=cookies)
+            if r.status_code == 200:
+                print("✅ Video uploaded to TikTok successfully!")
+                return True
             else:
-                success = upload_tiktok(video, caption)
-                log_event("success" if success else "fail", caption, bg, music)
-                print("✅ Posted!" if success else "❌ Upload failed.")
-            print(f"⏳ Sleeping {POST_INTERVAL} minutes...")
-            time.sleep(POST_INTERVAL * 60)
-        except Exception as e:
-            log_event("error", "", "", "", str(e))
-            print("Error:", e)
+                print(f"⚠️ Upload failed: {r.text}")
+                return False
+    except Exception as e:
+        print(f"❌ Upload error: {e}")
+        return False
+
+# ---------------------------
+# Main Loop
+# ---------------------------
+def main():
+    print("🚀 Starting AI TikTok Auto Poster")
+    for i in range(3):  # Default 3 posts/day
+        print(f"\n▶️ Run {i+1}/3")
+        quote = safe_generate_quote()
+        if not quote:
+            continue
+
+        video_path = create_video(quote)
+        if not video_path:
+            continue
+
+        hashtags = "#motivation #inspiration #selfgrowth #positivity"
+        caption = f"{quote}\n\n{hashtags}"
+        upload_to_tiktok(video_path, caption)
+
+        if i < 2:
+            print(f"⏱ Waiting {POST_INTERVAL}s before next post...")
+            time.sleep(POST_INTERVAL)
     print("✅ All done for today!")
 
 if __name__ == "__main__":
