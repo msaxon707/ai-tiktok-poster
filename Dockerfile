@@ -1,13 +1,18 @@
-FROM python:3.11-slim
+FROM python:3.11
 
 WORKDIR /app
 COPY . /app
 
-# Install system dependencies including ffmpeg for moviepy
-RUN apt-get update && apt-get install -y ffmpeg build-essential && rm -rf /var/lib/apt/lists/*
+# Install ffmpeg and other dependencies required by moviepy
+RUN apt-get update && apt-get install -y \
+    ffmpeg \
+    libsm6 \
+    libxext6 \
+    libgl1 \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
 
-# Force reinstall all packages — avoids silent cache skips
 RUN pip install --upgrade pip setuptools wheel
-RUN pip install --force-reinstall --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
 
 CMD ["python", "main.py"]
