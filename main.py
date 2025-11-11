@@ -11,7 +11,7 @@ logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(message)s"
 )
 
-OUTPUT_PATH = os.getenv("OUTPUT_PATH", "/app/videos")
+OUTPUT_PATH = os.getenv("OUTPUT_PATH", "/app/assets")
 POST_INTERVAL = int(os.getenv("POST_INTERVAL", 180))  # seconds between posts
 NICHE = os.getenv("NICHE", "motivation")
 
