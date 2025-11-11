@@ -2,105 +2,122 @@ import os
 import time
 import random
 import logging
-from moviepy.editor import VideoFileClip, AudioFileClip, TextClip, CompositeVideoClip
-from openai import OpenAI
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.common.by import By
 
-# ───────────────────────────────
-# CONFIGURATION
-# ───────────────────────────────
+# -------------------- SETTINGS --------------------
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-POST_INTERVAL = int(os.getenv("POST_INTERVAL", 180)) * 60  # minutes → seconds
-VIDEOS_DIR = "assets/videos"
-MUSIC_DIR = "assets/music"
-OUTPUT_DIR = "videos"
-NICHE = os.getenv("NICHE", "motivation")
+TIKTOK_SESSION_ID = os.getenv("TIKTOK_SESSION_ID")
+UPLOAD_WAIT = 15           # Wait after clicking Post
+MAX_RETRIES = 3            # How many times to retry
+RETRY_DELAY = 600          # 10 minutes between retries
+DEFAULT_NICHE = os.getenv("NICHE", "motivation")
 
-os.makedirs(OUTPUT_DIR, exist_ok=True)
+# -------------------- DRIVER SETUP --------------------
+def get_driver():
+    chrome_options = Options()
+    chrome_options.add_argument("--headless=new")
+    chrome_options.add_argument("--no-sandbox")
+    chrome_options.add_argument("--disable-dev-shm-usage")
+    chrome_options.add_argument("--window-size=1920,1080")
+    driver = webdriver.Chrome(options=chrome_options)
+    return driver
 
-# ───────────────────────────────
-# GENERATE MOTIVATIONAL QUOTE
-# ───────────────────────────────
-def get_motivational_quote():
+# -------------------- LOGIN --------------------
+def tiktok_login(driver):
+    logging.info("Logging into TikTok using session cookie...")
+    driver.get("https://www.tiktok.com/upload?lang=en")
+
+    driver.add_cookie({
+        "name": "sessionid",
+        "value": TIKTOK_SESSION_ID,
+        "domain": ".tiktok.com",
+        "path": "/"
+    })
+    driver.refresh()
+    time.sleep(3)
+
+    if "upload" in driver.current_url:
+        logging.info("✅ Logged into TikTok successfully.")
+        return True
+    else:
+        logging.warning("⚠️ TikTok login failed — check session ID or expiration.")
+        return False
+
+# -------------------- HASHTAG GENERATOR --------------------
+def generate_hashtags(niche="motivation"):
+    hashtag_dict = {
+        "motivation": [
+            "#motivation", "#success", "#inspiration", "#mindset",
+            "#nevergiveup", "#goals", "#fyp", "#motivationalquotes",
+            "#positivity", "#selfimprovement"
+        ],
+        "fitness": [
+            "#fitness", "#gym", "#workout", "#fitlife", "#transformation",
+            "#fyp", "#health", "#dedication", "#fitmotivation"
+        ],
+        "lifestyle": [
+            "#lifestyle", "#dailyvibes", "#countryliving", "#happiness",
+            "#selflove", "#relax", "#goodvibes", "#momlife", "#fyp"
+        ],
+        "dogs": [
+            "#dogsoftiktok", "#puppylove", "#fyp", "#doglife", "#cutedog",
+            "#dogs", "#doglover", "#petsoftiktok"
+        ]
+    }
+
+    hashtags = hashtag_dict.get(niche.lower(), hashtag_dict["motivation"])
+    random.shuffle(hashtags)
+    return " ".join(hashtags[:6])
+
+# -------------------- ATTEMPT UPLOAD --------------------
+def attempt_upload(video_path, caption):
+    driver = get_driver()
     try:
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": "You are a short-form motivational quote generator."},
-                {"role": "user", "content": "Write one original motivational quote under 15 words."}
-            ],
-            max_tokens=50,
-        )
-        quote = response.choices[0].message.content.strip('" ')
-        logging.info(f"Generated quote: {quote}")
-        return quote
-    except Exception as e:
-        logging.error(f"OpenAI quote generation failed: {e}")
-        return "Keep pushing forward. Great things take time."
+        if not tiktok_login(driver):
+            return False
 
-# ───────────────────────────────
-# CREATE VIDEO
-# ───────────────────────────────
-def create_video():
-    try:
-        # Pick a random video + music file
-        video_file = random.choice(os.listdir(VIDEOS_DIR))
-        music_file = random.choice(os.listdir(MUSIC_DIR))
-        quote = get_motivational_quote()
+        driver.get("https://www.tiktok.com/upload?lang=en")
+        time.sleep(5)
 
-        video_path = os.path.join(VIDEOS_DIR, video_file)
-        music_path = os.path.join(MUSIC_DIR, music_file)
+        upload_input = driver.find_element(By.XPATH, '//input[@type="file"]')
+        upload_input.send_keys(video_path)
+        logging.info("🎥 Video file loaded.")
 
-        logging.info(f"Using video: {video_file}, music: {music_file}")
+        time.sleep(5)
+        caption_box = driver.find_element(By.XPATH, '//div[@role="textbox"]')
+        caption_box.send_keys(caption)
+        logging.info("📝 Caption added.")
 
-        clip = VideoFileClip(video_path)
-        music = AudioFileClip(music_path)
+        post_button = driver.find_element(By.XPATH, '//button[contains(text(), "Post")]')
+        post_button.click()
+        logging.info("🚀 Video upload started... waiting to confirm.")
+        time.sleep(UPLOAD_WAIT)
 
-        # Shorten to 15–30 seconds
-        duration = random.randint(15, 30)
-        if clip.duration > duration:
-            clip = clip.subclip(0, duration)
-
-        # Add music
-        final_audio = music.volumex(0.4)
-        clip = clip.set_audio(final_audio)
-
-        # Add quote overlay
-        txt = TextClip(
-            quote,
-            fontsize=40,
-            color="white",
-            font="Arial-Bold",
-            method="caption",
-            size=clip.size
-        ).set_position("center").set_duration(clip.duration)
-
-        final = CompositeVideoClip([clip, txt])
-        output_path = os.path.join(OUTPUT_DIR, f"motivational_{int(time.time())}.mp4")
-        final.write_videofile(output_path, codec="libx264", audio_codec="aac")
-
-        logging.info(f"✅ Video created: {output_path}")
-        return output_path
+        logging.info("✅ Upload finished successfully!")
+        return True
 
     except Exception as e:
-        logging.error(f"Video creation failed: {e}")
-        return None
+        logging.error(f"❌ Upload attempt failed: {e}")
+        return False
 
-# ───────────────────────────────
-# MAIN AUTO LOOP
-# ───────────────────────────────
-def main():
-    logging.info("🚀 Starting AI Motivational TikTok Auto Poster...")
-    while True:
-        video_path = create_video()
-        if video_path:
-            # Here’s where you’d upload to TikTok — placeholder
-            logging.info(f"Pretending to upload video: {video_path}")
+    finally:
+        driver.quit()
+
+# -------------------- RETRY HANDLER --------------------
+def upload_video(video_path, quote):
+    caption = f"{quote}\n\n{generate_hashtags(DEFAULT_NICHE)}"
+
+    for attempt in range(1, MAX_RETRIES + 1):
+        logging.info(f"🌀 Upload attempt {attempt}/{MAX_RETRIES}")
+        if attempt_upload(video_path, caption):
+            logging.info("✅ TikTok upload confirmed successful.")
+            return True
         else:
-            logging.warning("Skipping upload due to error.")
-        logging.info(f"Sleeping for {POST_INTERVAL / 60:.0f} minutes before next post...")
-        time.sleep(POST_INTERVAL)
+            logging.warning(f"⚠️ Upload failed. Retrying in {RETRY_DELAY // 60} minutes...")
+            time.sleep(RETRY_DELAY)
 
-if __name__ == "__main__":
-    main()
+    logging.error("❌ All upload attempts failed. Skipping this video.")
+    return False
