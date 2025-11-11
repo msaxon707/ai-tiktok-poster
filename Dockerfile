@@ -1,11 +1,11 @@
 FROM python:3.11-slim
 
+# Install ffmpeg (for MoviePy)
+RUN apt-get update && apt-get install -y ffmpeg && apt-get clean
+
 WORKDIR /app
 COPY . /app
 
-RUN apt-get update && apt-get install -y ffmpeg && rm -rf /var/lib/apt/lists/*
-RUN pip install --upgrade pip
-RUN pip install --no-cache-dir openai moviepy pillow python-dotenv requests
+RUN pip install --no-cache-dir -r requirements.txt
 
 CMD ["python", "main.py"]
-
