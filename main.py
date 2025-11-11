@@ -1,3 +1,8 @@
+print("🧠 Checking MoviePy import...")
+import subprocess, sys
+subprocess.run([sys.executable, "-m", "pip", "show", "moviepy"])
+from moviepy.editor import VideoFileClip
+print("✅ MoviePy imported successfully.")
 import os
 import time
 import logging
