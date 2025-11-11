@@ -1,5 +1,4 @@
-openai>=1.14.0
-requests
-moviepy
-python-dotenv
-Pillow
+openai==1.12.0
+moviepy==1.0.3
+numpy==1.26.0
+requests==2.31.0
