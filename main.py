@@ -1,74 +1,73 @@
 import os
 import time
-import random
 import logging
-from upload import upload_video, generate_hashtags
+from moviepy.editor import VideoFileClip, TextClip, CompositeVideoClip
+from upload import upload_to_tiktok
 
-# -------------------- SETTINGS --------------------
+# Logging setup
 logging.basicConfig(
-    filename="poster.log",  # also saves logs in file
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s"
 )
 
-OUTPUT_PATH = os.getenv("OUTPUT_PATH", "/app/assets")
-POST_INTERVAL = int(os.getenv("POST_INTERVAL", 180))  # seconds between posts
-NICHE = os.getenv("NICHE", "motivation")
+VIDEOS_DIR = "./videos"
+ASSETS_DIR = "./assets"
+POST_INTERVAL = int(os.getenv("POST_INTERVAL", 1800))  # every 30 minutes
 
-# Sample motivational quotes (local to avoid API costs)
-QUOTES = [
-    "You are stronger than you think.",
-    "Push yourself, because no one else will do it for you.",
-    "Discipline beats motivation every time.",
-    "Every day is a new opportunity to grow.",
-    "Don’t stop until you’re proud.",
-    "Dream big, work hard, stay humble.",
-    "Small steps every day lead to big changes.",
-    "Focus on progress, not perfection."
-]
+def process_video(video_path):
+    """Add caption text overlay and prepare video."""
+    logging.info(f"🎬 Processing {os.path.basename(video_path)}...")
 
-# -------------------- MAIN AUTO POST LOOP --------------------
-def get_random_video():
-    """
-    Grabs a random video file from OUTPUT_PATH
-    """
-    if not os.path.exists(OUTPUT_PATH):
-        os.makedirs(OUTPUT_PATH)
-    videos = [f for f in os.listdir(OUTPUT_PATH) if f.endswith(('.mp4', '.mov', '.mkv'))]
-    if not videos:
-        logging.warning("⚠️ No videos found in folder. Add files to /videos.")
+    try:
+        clip = VideoFileClip(video_path)
+        caption = "💭 Stay motivated — every day counts! 💪"
+
+        text = TextClip(
+            caption,
+            fontsize=50,
+            color='white',
+            font=os.path.join(ASSETS_DIR, "fonts", "Arial.ttf") if os.path.exists(os.path.join(ASSETS_DIR, "fonts", "Arial.ttf")) else "Arial-Bold",
+            stroke_color='black',
+            stroke_width=2
+        ).set_position(('center', 'bottom')).set_duration(clip.duration)
+
+        final = CompositeVideoClip([clip, text])
+        output_path = os.path.join(VIDEOS_DIR, f"processed_{os.path.basename(video_path)}")
+        final.write_videofile(output_path, codec='libx264', audio_codec='aac')
+        logging.info(f"✅ Video processed and saved to {output_path}")
+        return output_path
+
+    except Exception as e:
+        logging.error(f"❌ Error processing video {video_path}: {e}")
         return None
-    return os.path.join(OUTPUT_PATH, random.choice(videos))
 
-def generate_caption():
-    """
-    Builds a motivational caption with hashtags.
-    """
-    quote = random.choice(QUOTES)
-    hashtags = generate_hashtags(NICHE)
-    return f"{quote}\n\n{hashtags}"
 
 def main():
     logging.info("🚀 Starting AI TikTok Auto Poster...")
+
+    if not os.path.exists(VIDEOS_DIR):
+        logging.warning("⚠️ No videos directory found. Creating one...")
+        os.makedirs(VIDEOS_DIR)
+        return
+
     while True:
-        video = get_random_video()
-        if not video:
-            logging.warning("No videos found. Retrying in 10 minutes.")
+        videos = [v for v in os.listdir(VIDEOS_DIR) if v.endswith(('.mp4', '.mov')) and not v.startswith('processed_')]
+        if not videos:
+            logging.warning("⚠️ No videos found in folder. Add files to /videos.")
             time.sleep(600)
             continue
 
-        caption = generate_caption()
-        logging.info(f"🎬 Uploading video: {video}")
-        logging.info(f"📝 Caption: {caption}")
+        for video in videos:
+            path = os.path.join(VIDEOS_DIR, video)
+            processed_path = process_video(path)
+            if processed_path:
+                upload_to_tiktok(processed_path)
+                logging.info(f"✅ Successfully uploaded: {video}")
+            else:
+                logging.warning(f"⚠️ Skipping {video} due to processing error.")
 
-        success = upload_video(video, caption)
-        if success:
-            logging.info(f"✅ Successfully posted video: {video}")
-        else:
-            logging.error(f"❌ Failed to post video: {video}")
+            time.sleep(POST_INTERVAL)
 
-        logging.info(f"🕒 Waiting {POST_INTERVAL} seconds before next upload...")
-        time.sleep(POST_INTERVAL)
 
 if __name__ == "__main__":
     main()
