@@ -1,26 +1,26 @@
+# Dockerfile
 FROM python:3.11-slim
 
-# Set work directory
-WORKDIR /app
-
-# Copy all files
-COPY . /app
-
-# Install system dependencies required for moviepy
+# System deps for moviepy / ffmpeg
 RUN apt-get update && apt-get install -y \
     ffmpeg \
-    libsm6 \
-    libxext6 \
-    libgl1 \
     && rm -rf /var/lib/apt/lists/*
 
-# Upgrade pip and install dependencies
-RUN pip install --upgrade pip setuptools wheel
+WORKDIR /app
+
+# Install Python deps first (better cache)
+COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Show installed packages (for debug)
-RUN pip list
-RUN python -m pip list
+# Copy the rest of the app
+COPY . .
 
-# Run script
+# Default env dirs (can be overridden in Coolify)
+ENV ASSETS_DIR=/app/assets \
+    VIDEOS_DIR=/app/videos \
+    OUTPUT_PATH=/app/output \
+    MAX_POSTS_PER_DAY=6 \
+    MAX_POSTS_PER_RUN=1
+
 CMD ["python", "main.py"]
+
