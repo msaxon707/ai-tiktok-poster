@@ -16,11 +16,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Default env dirs (can be overridden in Coolify)
-ENV ASSETS_DIR=/app/assets \
-    VIDEOS_DIR=/app/videos \
-    OUTPUT_PATH=/app/output \
-    MAX_POSTS_PER_DAY=6 \
-    MAX_POSTS_PER_RUN=1
-
-CMD ["python", "main.py"]
-
+ENV CONFIG_FILE=/app/config.txt \
+    DATA_ROOT=/data \
+    LOG_LEVEL=INFO
+    CMD ["python", "cli.py", "schedule"]
