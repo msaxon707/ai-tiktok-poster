@@ -20,6 +20,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Show installed packages (for debug)
 RUN pip list
+RUN python -m pip list
 
 # Run script
 CMD ["python", "main.py"]
