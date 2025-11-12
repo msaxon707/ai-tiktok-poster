@@ -59,6 +59,7 @@ class PathConfig:
 
 
 @dataclass
+
 class AppConfig:
     paths: PathConfig
     schedule: ScheduleConfig
@@ -72,6 +73,7 @@ class AppConfig:
     google_font_family: str
     google_font_weight: str
     max_posts_per_day: int
+
 
     @property
     def config_json(self) -> str:
@@ -88,6 +90,7 @@ class AppConfig:
             "openai_max_tokens": self.openai_max_tokens,
             "openai_max_cost": self.openai_max_cost,
             "max_posts_per_day": self.max_posts_per_day,
+
         }
         return json.dumps(payload, indent=2)
 
@@ -104,7 +107,7 @@ def load_config(config_path: Optional[Path] = None) -> AppConfig:
 
     base_dir = Path(_get("DATA_ROOT", str(Path.cwd() / "data")))
     assets_dir = Path(_get("ASSETS_DIR", str(base_dir / "assets")))
-    videos_dir = Path(_get("VIDEOS_DIR", str(assets_dir / "videos")))
+
     music_dir = Path(_get("MUSIC_DIR", str(assets_dir / "music")))
     fonts_dir = Path(_get("FONTS_DIR", str(assets_dir / "fonts")))
     featured_dir = Path(_get("FEATURED_IMAGES_DIR", str(assets_dir / "featured")))
@@ -161,6 +164,7 @@ def load_config(config_path: Optional[Path] = None) -> AppConfig:
         seo_keywords=seo_keywords,
     )
 
+
     return AppConfig(
         paths=paths,
         schedule=schedule_cfg,
@@ -174,7 +178,4 @@ def load_config(config_path: Optional[Path] = None) -> AppConfig:
         google_font_family=google_font_family,
         google_font_weight=google_font_weight,
         max_posts_per_day=max_posts_per_day,
-    )
 
-
-__all__ = ["AppConfig", "ScheduleConfig", "CaptionConfig", "PathConfig", "load_config"]

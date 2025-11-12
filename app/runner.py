@@ -11,6 +11,7 @@ from typing import Optional
 from .auth import OpenAIClient
 from .config import AppConfig, load_config
 from .assets import download_pexels_videos
+
 from .content import generate_content
 from .logging_utils import configure_logging
 from .state import StateManager
@@ -27,6 +28,7 @@ class AutoPoster:
         self.state_manager = StateManager(self.config.paths.state_file, self.config.paths.backups_dir)
         self.video_processor = VideoProcessor(self.config)
         self.uploader = VideoUploader(self.config)
+
 
         for path in [
             self.config.paths.assets_dir,
@@ -111,6 +113,7 @@ class AutoPoster:
         logger.info("Backup saved to %s", backup_path)
 
         uploaded = self.uploader.upload(render.output_path, caption)
+
         if uploaded:
             history.posts_today += 1
             history.used_videos.append(background.name)

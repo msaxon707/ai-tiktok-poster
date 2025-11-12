@@ -20,4 +20,3 @@ COPY . .
 ENV CONFIG_FILE=/app/config.txt \
     DATA_ROOT=/data \
     LOG_LEVEL=INFO
-    CMD ["python", "cli.py", "schedule"]
