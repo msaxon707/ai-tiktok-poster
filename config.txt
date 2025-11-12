@@ -1,0 +1,20 @@
+# Environment-style configuration file.
+# Values here are overridden by real environment variables.
+
+OPENAI_API_KEY=
+PEXELS_API_KEY=
+TIKTOK_SESSION_ID=
+
+DATA_ROOT=./data
+SCHEDULE_INTERVAL_HOURS=3
+SCHEDULE_TIMEZONE=UTC
+SCHEDULE_JITTER_MINUTES=10
+SCHEDULE_START_IMMEDIATELY=true
+MAX_POSTS_PER_DAY=8
+
+CAPTION_HASHTAGS=#motivation,#inspiration,#mindset,#success,#positivity
+SEO_KEYWORDS=motivation,inspiration,success,discipline,positive mindset
+CAPTION_TEMPLATE={quote}\n\n{hashtags}
+
+GOOGLE_FONT_FAMILY=Poppins
+GOOGLE_FONT_WEIGHT=600
