@@ -11,6 +11,7 @@ from typing import Optional
 from .auth import OpenAIClient
 from .config import AppConfig, load_config
 from .assets import download_pexels_videos
+from .airtable import AirtableLogger
 from .content import generate_content
 from .logging_utils import configure_logging
 from .state import StateManager
@@ -27,6 +28,7 @@ class AutoPoster:
         self.state_manager = StateManager(self.config.paths.state_file, self.config.paths.backups_dir)
         self.video_processor = VideoProcessor(self.config)
         self.uploader = VideoUploader(self.config)
+        self.airtable_logger = AirtableLogger(self.config)
 
         for path in [
             self.config.paths.assets_dir,
@@ -111,6 +113,21 @@ class AutoPoster:
         logger.info("Backup saved to %s", backup_path)
 
         uploaded = self.uploader.upload(render.output_path, caption)
+        status = "uploaded" if uploaded else "skipped"
+        self.airtable_logger.log_post(
+            {
+                "Video Filename": render.output_path.name,
+                "Caption": caption,
+                "Quote": quote,
+                "Background Video": background.name if background else None,
+                "Music": music.name if music else None,
+                "Featured Image": featured_image.name if featured_image else None,
+                "Inline Image Count": len(inline_images) if inline_images else 0,
+                "Status": status,
+                "Uploaded At": datetime.utcnow(),
+            }
+        )
+
         if uploaded:
             history.posts_today += 1
             history.used_videos.append(background.name)

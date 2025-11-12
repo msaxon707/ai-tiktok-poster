@@ -18,3 +18,8 @@ CAPTION_TEMPLATE={quote}\n\n{hashtags}
 
 GOOGLE_FONT_FAMILY=Poppins
 GOOGLE_FONT_WEIGHT=600
+
+# Optional Airtable logging
+# AIRTABLE_API_KEY=
+# AIRTABLE_BASE_ID=
+# AIRTABLE_TABLE_NAME=tiktok posts
