@@ -115,7 +115,7 @@ def load_config(config_path: Optional[Path] = None) -> AppConfig:
 
     base_dir = Path(_get("DATA_ROOT", str(Path.cwd() / "data")))
     assets_dir = Path(_get("ASSETS_DIR", str(base_dir / "assets")))
-    videos_dir = Path(_get("VIDEOS_DIR", str(assets_dir / "videos")))
+    videos_dir = Path(_get("VIDEOS_DIR", "/app/videos"))
     music_dir = Path(_get("MUSIC_DIR", str(assets_dir / "music")))
     fonts_dir = Path(_get("FONTS_DIR", str(assets_dir / "fonts")))
     featured_dir = Path(_get("FEATURED_IMAGES_DIR", str(assets_dir / "featured")))

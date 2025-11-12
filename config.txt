@@ -6,6 +6,8 @@ PEXELS_API_KEY=
 TIKTOK_SESSION_ID=
 
 DATA_ROOT=./data
+# Override to change where source background videos are stored
+VIDEOS_DIR=/app/videos
 SCHEDULE_INTERVAL_HOURS=3
 SCHEDULE_TIMEZONE=UTC
 SCHEDULE_JITTER_MINUTES=10
