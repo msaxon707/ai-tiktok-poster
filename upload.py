@@ -1,21 +1,27 @@
-import os
-import time
+# upload.py
 import logging
-import requests
+import os
+from typing import Optional
 
-def upload_to_tiktok(video_path):
+logger = logging.getLogger(__name__)
+
+def upload_to_tiktok(video_path: str, caption: str, session_id: Optional[str] = None) -> bool:
     """
-    Simulates uploading a video to TikTok.
-    Replace this logic with TikTok API or session-based automation later.
+    Placeholder TikTok uploader.
+
+    Right now this function:
+      - Logs what it *would* upload
+      - Returns True to let the pipeline continue
+
+    To actually upload, replace this body with real TikTok uploading logic,
+    using your session cookie or a proper TikTok API/client.
     """
-    try:
-        logging.info(f"📤 Uploading {os.path.basename(video_path)} to TikTok...")
+    if session_id is None:
+        session_id = os.getenv("TIKTOK_SESSION_ID")
 
-        # Simulated upload delay (you can adjust this)
-        time.sleep(5)
-
-        # Example success log
-        logging.info(f"✅ Successfully uploaded {os.path.basename(video_path)}!")
-
-    except Exception as e:
-        logging.error(f"❌ Failed to upload {video_path}: {e}")
+    logger.info("---- TikTok UPLOAD (SIMULATED) ----")
+    logger.info(f"Video:   {video_path}")
+    logger.info(f"Caption: {caption}")
+    logger.info(f"Session: {'SET' if session_id else 'NOT SET'}")
+    logger.info("No real upload is being performed (stub function).")
+    return True
