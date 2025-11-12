@@ -1,86 +1,58 @@
-"""Airtable logging utilities for TikTok posts."""
+"""Asset acquisition helpers."""
 
 from __future__ import annotations
 
-import json
 import logging
-from datetime import datetime
-from typing import Any, Dict, Optional
+from pathlib import Path
+from typing import List
 
 import requests
-from requests import Response
-from urllib.parse import quote
-
-from .config import AppConfig
 
 logger = logging.getLogger(__name__)
 
 
-class AirtableLogger:
-    """Simple client that records post metadata to Airtable."""
+def download_pexels_videos(api_key: str, target_dir: Path, query: str = "motivation", count: int = 5) -> List[Path]:
+    if not api_key:
+        return []
+    target_dir.mkdir(parents=True, exist_ok=True)
 
-    def __init__(self, config: AppConfig):
-        airtable_cfg = config.airtable
-        self.api_key: Optional[str] = airtable_cfg.api_key
-        self.base_id: Optional[str] = airtable_cfg.base_id
-        self.table_name: Optional[str] = airtable_cfg.table_name
-        self._enabled = bool(self.api_key and self.base_id and self.table_name)
+    headers = {"Authorization": api_key}
+    params = {"query": query, "orientation": "portrait", "per_page": count}
 
-        if not self._enabled:
-            logger.info("Airtable logging disabled - missing configuration values.")
+    try:
+        response = requests.get("https://api.pexels.com/videos/search", headers=headers, params=params, timeout=20)
+        response.raise_for_status()
+    except Exception as exc:
+        logger.error("Failed to fetch Pexels videos: %s", exc)
+        return []
 
-    @property
-    def enabled(self) -> bool:
-        return self._enabled
+    data = response.json().get("videos", [])
+    downloaded: List[Path] = []
 
-    def log_post(self, fields: Dict[str, Any]) -> bool:
-        """Send a record to Airtable. Returns True if the request succeeded."""
-
-        if not self.enabled:
-            return False
-
-        payload = {"fields": self._serialise_fields(fields)}
-
+    for video in data:
+        video_id = video.get("id")
+        files = video.get("video_files", [])
+        if not files or video_id is None:
+            continue
+        portrait_files = [f for f in files if (f.get("height") or 0) >= 1280]
+        selected = portrait_files[0] if portrait_files else files[0]
+        url = selected.get("link")
+        if not url:
+            continue
+        output_path = target_dir / f"pexels_{video_id}.mp4"
+        if output_path.exists():
+            downloaded.append(output_path)
+            continue
         try:
-            response = self._post(payload)
-        except Exception as exc:  # pragma: no cover - requests exceptions
-            logger.warning("Failed to reach Airtable API: %s", exc)
-            return False
+            logger.info("Downloading Pexels video %s", video_id)
+            file_bytes = requests.get(url, timeout=60)
+            file_bytes.raise_for_status()
+            output_path.write_bytes(file_bytes.content)
+            downloaded.append(output_path)
+        except Exception as exc:
+            logger.warning("Unable to download Pexels video %s: %s", video_id, exc)
 
-        if 200 <= response.status_code < 300:
-            logger.info("Logged TikTok post to Airtable table '%s'.", self.table_name)
-            return True
-
-        try:
-            detail = response.json()
-        except Exception:  # pragma: no cover - non JSON error
-            detail = response.text
-        logger.warning(
-            "Airtable logging request failed with status %s: %s",
-            response.status_code,
-            detail,
-        )
-        return False
-
-    def _post(self, payload: Dict[str, Any]) -> Response:
-        url = f"https://api.airtable.com/v0/{self.base_id}/{quote(self.table_name, safe='')}"
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json",
-        }
-        return requests.post(url, headers=headers, data=json.dumps(payload), timeout=10)
-
-    @staticmethod
-    def _serialise_fields(fields: Dict[str, Any]) -> Dict[str, Any]:
-        serialised: Dict[str, Any] = {}
-        for key, value in fields.items():
-            if isinstance(value, datetime):
-                serialised[key] = value.isoformat().replace("+00:00", "Z")
-            elif value is None:
-                continue
-            else:
-                serialised[key] = value
-        return serialised
+    return downloaded
 
 
-__all__ = ["AirtableLogger"]
+__all__ = ["download_pexels_videos"]
