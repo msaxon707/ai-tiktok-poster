@@ -59,13 +59,7 @@ class PathConfig:
 
 
 @dataclass
-class AirtableConfig:
-    api_key: Optional[str] = None
-    base_id: Optional[str] = None
-    table_name: Optional[str] = None
 
-
-@dataclass
 class AppConfig:
     paths: PathConfig
     schedule: ScheduleConfig
@@ -79,7 +73,7 @@ class AppConfig:
     google_font_family: str
     google_font_weight: str
     max_posts_per_day: int
-    airtable: AirtableConfig
+
 
     @property
     def config_json(self) -> str:
@@ -96,9 +90,7 @@ class AppConfig:
             "openai_max_tokens": self.openai_max_tokens,
             "openai_max_cost": self.openai_max_cost,
             "max_posts_per_day": self.max_posts_per_day,
-            "airtable_configured": bool(
-                self.airtable.api_key and self.airtable.base_id and self.airtable.table_name
-            ),
+
         }
         return json.dumps(payload, indent=2)
 
@@ -115,7 +107,7 @@ def load_config(config_path: Optional[Path] = None) -> AppConfig:
 
     base_dir = Path(_get("DATA_ROOT", str(Path.cwd() / "data")))
     assets_dir = Path(_get("ASSETS_DIR", str(base_dir / "assets")))
-    videos_dir = Path(_get("VIDEOS_DIR", "/app/videos"))
+
     music_dir = Path(_get("MUSIC_DIR", str(assets_dir / "music")))
     fonts_dir = Path(_get("FONTS_DIR", str(assets_dir / "fonts")))
     featured_dir = Path(_get("FEATURED_IMAGES_DIR", str(assets_dir / "featured")))
@@ -172,11 +164,6 @@ def load_config(config_path: Optional[Path] = None) -> AppConfig:
         seo_keywords=seo_keywords,
     )
 
-    airtable_cfg = AirtableConfig(
-        api_key=_get("AIRTABLE_API_KEY"),
-        base_id=_get("AIRTABLE_BASE_ID"),
-        table_name=_get("AIRTABLE_TABLE_NAME", "tiktok posts"),
-    )
 
     return AppConfig(
         paths=paths,
@@ -191,15 +178,4 @@ def load_config(config_path: Optional[Path] = None) -> AppConfig:
         google_font_family=google_font_family,
         google_font_weight=google_font_weight,
         max_posts_per_day=max_posts_per_day,
-        airtable=airtable_cfg,
-    )
 
-
-__all__ = [
-    "AppConfig",
-    "ScheduleConfig",
-    "CaptionConfig",
-    "PathConfig",
-    "AirtableConfig",
-    "load_config",
-]
